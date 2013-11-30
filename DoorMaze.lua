@@ -12,29 +12,29 @@ local MAZE_SIZE = 10;
 --- Height for the maze, halved
 local MAZE_HEIGHT = 5;
 
+--- Number of doors to change at once
+local MAZE_CHANGES = 50;
+
 
 
 
 --- Toggles a few doors in a single maze
 function ToggleMazeDoors(a_Maze)
-	for i = 0, 15 do
-		local rndx = math.random(2 * MAZE_SIZE);
-		local rndz = math.random(2 * MAZE_SIZE);
-		local Height = a_Maze.Height[rndz][rndx];
-		if (Height >= 0) then
-			local BlockX = a_Maze.Center.x + rndx - MAZE_SIZE;
-			local BlockZ = a_Maze.Center.z + rndz - MAZE_SIZE;
+	for i = 0, MAZE_CHANGES do
+		local rnd = math.random(#a_Maze.Doors);
+		local BlockX = a_Maze.Doors[rnd].x;
+		local BlockY = a_Maze.Doors[rnd].y;
+		local BlockZ = a_Maze.Doors[rnd].z;
 
-			-- TODO: We have no cWorld:ToggleDoor() API, we need to do it by hand:
-			local BlockValid, BlockType, BlockMeta = a_Maze.World:GetBlockTypeMeta(BlockX, Height + 2, BlockZ);
-			if (BlockValid and (BlockType == E_BLOCK_WOODEN_DOOR)) then
-				if (BlockMeta == 8) then
-					BlockMeta = 9;
-				else
-					BlockMeta = 8;
-				end
-				a_Maze.World:SetBlockMeta(BlockX, Height + 2, BlockZ, BlockMeta);
+		-- TODO: We have no cWorld:ToggleDoor() API, we need to do it by hand:
+		local BlockValid, BlockType, BlockMeta = a_Maze.World:GetBlockTypeMeta(BlockX, BlockY, BlockZ);
+		if (BlockValid and (BlockType == E_BLOCK_WOODEN_DOOR)) then
+			if (BlockMeta == 8) then
+				BlockMeta = 9;
+			else
+				BlockMeta = 8;
 			end
+			a_Maze.World:SetBlockMeta(BlockX, BlockY, BlockZ, BlockMeta);
 		end
 	end
 end
@@ -44,7 +44,7 @@ end
 
 
 function OnWorldTick(a_World, a_Dt, a_LastTickDuration)
-	-- TODO: Toggle some of mazes' doors
+	-- Toggle some of mazes' doors:
 	for idx, maze in ipairs(g_Mazes) do
 		if (maze.World == a_World) then
 			-- Check if it's late enough after the last toggle:
@@ -129,15 +129,12 @@ function GenerateMaze(a_World, a_MazeCenter)
 		return nil, "Cannot create maze: block area reading failed";
 	end
 
-	Maze.Height = {};
-	local NumDoorsPlaced = 0;
+	Maze.Doors = {};
 	for z = 0, 2 * MAZE_SIZE do
 		local BlockZ = MinZ + z;
-		Maze.Height[z] = {};
 		for x = 0, 2 * MAZE_SIZE do
 			local BlockX = MinX + x;
 			local Height = FindMazeHeight(WorldImage, BlockX, BlockZ, CenterY);
-			Maze.Height[z][x] = Height;
 			if (Height >= 0) then
 				-- TODO: Randomize the door placement
 				Height = MinY + Height;
@@ -146,14 +143,16 @@ function GenerateMaze(a_World, a_MazeCenter)
 				local PseudoRandom = (((BlockX * 7) % 17) * ((x + 10) % 13) + (BlockZ % 9)) * 13 + Height;
 				WorldImage:SetBlockTypeMeta(BlockX, Height,     BlockZ, E_BLOCK_WOODEN_DOOR, (PseudoRandom / 6) % 8);
 				WorldImage:SetBlockTypeMeta(BlockX, Height + 1, BlockZ, E_BLOCK_WOODEN_DOOR, 8 + (PseudoRandom % 2));
-				NumDoorsPlaced = NumDoorsPlaced + 1;
+				
+				-- Insert the top door block into the list of maze's doors
+				table.insert(Maze.Doors, {x = BlockX, y = Height + 1, z = BlockZ} );
 			end
 		end
 	end
 	
-	if (NumDoorsPlaced < MAZE_SIZE * MAZE_SIZE) then
+	if (#Maze.Doors < MAZE_SIZE * MAZE_SIZE) then
 		-- Less than 1/4 of the maze space has been set with doors, don't consider this a maze
-		local Percentage = 100 * NumDoorsPlaced / (4 * MAZE_SIZE * MAZE_SIZE);
+		local Percentage = 100 * #Maze.Doors / (4 * MAZE_SIZE * MAZE_SIZE);
 		return nil, "Cannot create maze: terrain not even enough, only " .. tostring(Percentage) .. " % can be mazed.";
 	end
 	
@@ -198,6 +197,19 @@ end
 
 
 
+--[[
+-- TODO
+function LoadMazes()
+	local Callbacks = {};
+	local Parser = lxp.new(Callbacks);
+end
+--]]
+
+
+
+
+-- The main initialization goes here:
+-- LoadMazes();
 cPluginManager.AddHook(cPluginManager.HOOK_WORLD_TICK, OnWorldTick);
 cPluginManager.BindCommand("/doormaze", "doormaze.create", HandleDoorMazeCommand, " - Creates a door maze around the specified player");
 
