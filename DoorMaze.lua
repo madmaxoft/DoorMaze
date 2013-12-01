@@ -18,6 +18,46 @@ local MAZE_CHANGES = 50;
 
 
 
+function SaveMazes()
+	-- TODO: Find a proper XML-writing library for this
+	local f, err = io.open("doormazes.xml", "w");
+	if (f == nil) then
+		LOGWARNING("DoorMaze: Cannot save mazes to 'mazes.xml': " .. err);
+		return;
+	end
+	f:write([[<?xml version="1.0" encoding="ISO-8859-1"?>]]);
+	f:write("\n<mazes>\n");
+	for idx, maze in ipairs(g_Mazes) do
+		f:write("<maze worldname='", maze.World:GetName(), "'>");
+		f:write("<center x='", maze.Center.x, "' y='", maze.Center.y, "' z='", maze.Center.z, "'/>\n");
+		f:write("<doors>\n");
+		for idx2, door in ipairs(maze.Doors) do
+			f:write("<door x='", door.x, "' y='", door.y, "' z='", door.z, "'/>\n");
+		end
+		f:write("</doors></maze>");
+	end
+	f:write("</mazes>");
+	f:close();
+end
+
+
+
+
+
+function LoadMazes()
+	local Callbacks =
+	{
+		StartElement = function(a_Parser, a_Name, a_Attrib)
+			-- TODO
+		end
+	};
+	local Parser = lxp.new(Callbacks);
+end
+
+
+
+
+
 --- Toggles a few doors in a single maze
 function ToggleMazeDoors(a_Maze)
 	for i = 0, MAZE_CHANGES do
@@ -187,6 +227,7 @@ function HandleDoorMazeCommand(a_Split, a_Player)
 		a_Player:SendMessage(err);
 	else
 		table.insert(g_Mazes, Maze);
+		SaveMazes();
 		a_Player:SendMessage("Maze created.");
 	end
 	
@@ -197,19 +238,8 @@ end
 
 
 
---[[
--- TODO
-function LoadMazes()
-	local Callbacks = {};
-	local Parser = lxp.new(Callbacks);
-end
---]]
-
-
-
-
 -- The main initialization goes here:
--- LoadMazes();
+LoadMazes();
 cPluginManager.AddHook(cPluginManager.HOOK_WORLD_TICK, OnWorldTick);
 cPluginManager.BindCommand("/doormaze", "doormaze.create", HandleDoorMazeCommand, " - Creates a door maze around the specified player");
 
