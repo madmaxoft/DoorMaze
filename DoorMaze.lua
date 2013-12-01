@@ -105,6 +105,46 @@ end
 
 
 
+--- Returns true if the specified XYZ point is in one of the specified maze's doors; also returns the door's Y coord
+function IsPointInMaze(a_X, a_Y, a_Z, a_Maze)
+	-- Convert through Vector3i to get integral coords:
+	local Point = Vector3i(a_X, a_Y, a_Z);
+	a_X = Point.x;
+	a_Y = Point.y;
+	a_Z = Point.z;
+	
+	if (
+		(a_X < a_Maze.Center.x - MAZE_SIZE) or
+		(a_X > a_Maze.Center.x + MAZE_SIZE) or
+		(a_Y < a_Maze.Center.y - MAZE_HEIGHT) or
+		(a_Y > a_Maze.Center.y + MAZE_HEIGHT) or
+		(a_Z < a_Maze.Center.z - MAZE_SIZE) or
+		(a_Z < a_Maze.Center.z - MAZE_SIZE)
+	) then
+		-- Outside the overall maze dimensions
+		return false;
+	end
+	
+	-- Check individual doors:
+	for idx, door in ipairs(a_Maze.Doors) do
+		if (
+			(door.x == a_X) and
+			(door.z == a_Z) and
+			(
+				(door.y == a_Y) or (door.y == a_Y + 1)
+			)
+		) then
+			return true, door.y;
+		end
+	end
+	
+	return false;
+end
+
+
+
+
+
 --- Toggles a few doors in a single maze
 function ToggleMazeDoors(a_Maze)
 	for i = 0, MAZE_CHANGES do
@@ -251,6 +291,25 @@ end
 
 
 
+--- Removes all doors belonging to the specified maze
+function RemoveMaze(a_Maze)
+	local World = a_Maze.World;
+	for idx, door in ipairs(a_Maze.Doors) do
+		local IsValid, BlockType, BlockMeta = World:GetBlockTypeMeta(door.x, door.y, door.z);
+		if (IsValid) then
+			World:SetBlock(door.x, door.y, door.z, E_BLOCK_AIR, 0);
+		end
+		IsValid, BlockType, BlockMeta = World:GetBlockTypeMeta(door.x, door.y - 1, door.z);
+		if (IsValid) then
+			World:SetBlock(door.x, door.y - 1, door.z, E_BLOCK_AIR, 0);
+		end
+	end
+end
+
+
+
+
+
 function HandleDoorMazeCommand(a_Split, a_Player)
 	local MazeCenter = a_Player:GetPosition();
 	local World = a_Player:GetWorld();
@@ -265,7 +324,7 @@ function HandleDoorMazeCommand(a_Split, a_Player)
 		);
 		if not(HasFound) then
 			a_Player:SendMessage("Player " .. a_Split[2] .. " not found.");
-			return;
+			return true;
 		end
 	end
 	
@@ -285,45 +344,62 @@ end
 
 
 
+function HandleUnDoorMazeCommand(a_Split, a_Player)
+	local MazePoint = a_Player:GetPosition();
+	local World = a_Player:GetWorld();
+	if (#a_Split > 1) then
+		local HasFound = false;
+		cRoot:Get():FindAndDoWithPlayer(a_Split[2],
+			function (a_DstPlayer)
+				HasFound = true;
+				MazePoint = a_DstPlayer:GetPosition();
+				World = a_DstPlayer:GetWorld();
+			end
+		);
+		if not(HasFound) then
+			a_Player:SendMessage("Player " .. a_Split[2] .. " not found.");
+			return true;
+		end
+	end
+	
+	for idx, maze in ipairs(g_Mazes) do
+		if (IsPointInMaze(MazePoint.x, MazePoint.y, MazePoint.z, maze)) then
+			RemoveMaze(maze);
+			table.remove(g_Mazes, idx);
+			a_Player:SendMessage("Maze was successfully removed.");
+			return true;
+		end
+	end
+	
+	a_Player:SendMessage("There's no maze to remove.");
+	return true;
+end
+
+
+
+
+
 function OnPlayerRightClick(a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace)
 	-- The player is right-clicking a block, prevent them from toggling maze's doors:
 	for idx, maze in ipairs(g_Mazes) do
 		if (maze.World == a_Player:GetWorld()) then
-			if (
-				(a_BlockX >= maze.Center.x - MAZE_SIZE) and
-				(a_BlockX <= maze.Center.x + MAZE_SIZE) and
-				(a_BlockZ >= maze.Center.z - MAZE_SIZE) and
-				(a_BlockZ <= maze.Center.z + MAZE_SIZE) and
-				(a_BlockY >= maze.Center.y - MAZE_HEIGHT) and
-				(a_BlockY <= maze.Center.y + MAZE_HEIGHT)
-			) then
-				-- The clicked block is within the maze's coords. Check each maze door:
-				for idx2, door in ipairs(maze.Doors) do
-					if (
-						(door.x == a_BlockX) and
-						(door.z == a_BlockZ) and
-						(
-							(door.y == a_BlockY) or (door.y == a_BlockY + 1)  -- The door is 2 blocks high, the stored coord is for the upper part
-						)
-					) then
-					
-						-- It is my door, how dare you touch it!?
-						a_Player:SendMessage("Don't touch the maze doors!");
-						
-						-- The client already thinks the door is toggled, let them know it's not (need to send both door blocks):
-						local IsValid1, BlockType1, BlockMeta1 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, door.y - 1, a_BlockZ);
-						if (IsValid1) then
-							local IsValid2, BlockType2, BlockMeta2 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, door.y, a_BlockZ);
-							if (IsValid2) then
-								a_Player:GetClientHandle():SendBlockChange(a_BlockX, door.y - 1, a_BlockZ, BlockType1, BlockMeta1);
-								a_Player:GetClientHandle():SendBlockChange(a_BlockX, door.y,     a_BlockZ, BlockType2, BlockMeta2);
-							end
-						end
-						
-						return true;
+			local InMaze, DoorY = IsPointInMaze(a_BlockX, a_BlockY, a_BlockZ, maze);
+			if (InMaze) then
+				-- It is my door, how dare you touch it!?
+				a_Player:SendMessage("Don't touch the maze doors!");
+				
+				-- The client already thinks the door is toggled, let them know it's not (need to send both door blocks):
+				local IsValid1, BlockType1, BlockMeta1 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, DoorY - 1, a_BlockZ);
+				if (IsValid1) then
+					local IsValid2, BlockType2, BlockMeta2 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, DoorY, a_BlockZ);
+					if (IsValid2) then
+						a_Player:GetClientHandle():SendBlockChange(a_BlockX, DoorY - 1, a_BlockZ, BlockType1, BlockMeta1);
+						a_Player:GetClientHandle():SendBlockChange(a_BlockX, DoorY,     a_BlockZ, BlockType2, BlockMeta2);
 					end
-				end  -- for door - maze.Doors[]
-			end  -- if (in maze)
+				end
+				
+				return true;
+			end  -- if (InMaze)
 		end  -- if (in maze world)
 	end  -- for maze - g_Mazes[]
 	return false;
@@ -380,7 +456,8 @@ LoadMazes();
 cPluginManager.AddHook(cPluginManager.HOOK_WORLD_TICK, OnWorldTick);
 cPluginManager.AddHook(cPluginManager.HOOK_PLAYER_RIGHT_CLICK, OnPlayerRightClick);
 cPluginManager.AddHook(cPluginManager.HOOK_PLAYER_BREAKING_BLOCK, OnPlayerBreakingBlock);
-cPluginManager.BindCommand("/doormaze", "doormaze.create", HandleDoorMazeCommand, " - Creates a door maze around the specified player");
+cPluginManager.BindCommand("/doormaze",   "doormaze.create", HandleDoorMazeCommand,   " - Creates a door maze around the specified player");
+cPluginManager.BindCommand("/undoormaze", "doormaze.delete", HandleUnDoorMazeCommand, " - Removed a door maze around the specified player");
 
 
 
