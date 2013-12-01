@@ -333,10 +333,53 @@ end
 
 
 
+function OnPlayerBreakingBlock(a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_BlockType, a_BlockMeta)
+	-- The player is breaking a block, prevent them from breaking the maze doors or the floor:
+	for idx, maze in ipairs(g_Mazes) do
+		if (maze.World == a_Player:GetWorld()) then
+			if (
+				(a_BlockX >= maze.Center.x - MAZE_SIZE) and
+				(a_BlockX <= maze.Center.x + MAZE_SIZE) and
+				(a_BlockZ >= maze.Center.z - MAZE_SIZE) and
+				(a_BlockZ <= maze.Center.z + MAZE_SIZE) and
+				(a_BlockY >= maze.Center.y - MAZE_HEIGHT - 1) and
+				(a_BlockY <= maze.Center.y + MAZE_HEIGHT)
+			) then
+				-- The clicked block is within the maze's coords. Check each maze door:
+				for idx2, door in ipairs(maze.Doors) do
+					if (
+						(door.x == a_BlockX) and
+						(door.z == a_BlockZ)
+					) then
+						if (
+							(door.y == a_BlockY) or
+							(door.y == a_BlockY + 1)  -- The door is 2 blocks high, the stored coord is for the upper part
+						) then
+							-- It is my door / floor, how dare you touch it!?
+							a_Player:SendMessage("Don't touch the maze doors!");
+							return true;
+						elseif (door.y == a_BlockY + 2) then
+							-- Also protect the floor below the doors
+							a_Player:SendMessage("Don't touch the maze floor!");
+							return true;
+						end
+					end  -- if (X/Z coords match)
+				end  -- for door - maze.Doors[]
+			end  -- if (in maze)
+		end  -- if (in maze world)
+	end  -- for maze - g_Mazes[]
+	return false;
+end
+
+
+
+
+
 -- The main initialization goes here:
 LoadMazes();
 cPluginManager.AddHook(cPluginManager.HOOK_WORLD_TICK, OnWorldTick);
 cPluginManager.AddHook(cPluginManager.HOOK_PLAYER_RIGHT_CLICK, OnPlayerRightClick);
+cPluginManager.AddHook(cPluginManager.HOOK_PLAYER_BREAKING_BLOCK, OnPlayerBreakingBlock);
 cPluginManager.BindCommand("/doormaze", "doormaze.create", HandleDoorMazeCommand, " - Creates a door maze around the specified player");
 
 
