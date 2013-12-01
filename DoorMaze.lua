@@ -69,9 +69,9 @@ function LoadMazes()
 					-- The actual drop will happen on "</maze>"
 				end
 			elseif (a_Name == "center") then
-				CurrentMaze.Center = Vector3i(a_Attrib.x, a_Attrib.y, a_Attrib.z);
+				CurrentMaze.Center = Vector3i(tonumber(a_Attrib.x), tonumber(a_Attrib.y), tonumber(a_Attrib.z));
 			elseif (a_Name == "door") then
-				table.insert(CurrentMaze.Doors, { x = a_Attrib.x, y = a_Attrib.y, z = a_Attrib.z });
+				table.insert(CurrentMaze.Doors, { x = tonumber(a_Attrib.x), y = tonumber(a_Attrib.y), z = tonumber(a_Attrib.z) });
 			end
 		end,
 		
@@ -285,9 +285,58 @@ end
 
 
 
+function OnPlayerRightClick(a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace)
+	-- The player is right-clicking a block, prevent them from toggling maze's doors:
+	for idx, maze in ipairs(g_Mazes) do
+		if (maze.World == a_Player:GetWorld()) then
+			if (
+				(a_BlockX >= maze.Center.x - MAZE_SIZE) and
+				(a_BlockX <= maze.Center.x + MAZE_SIZE) and
+				(a_BlockZ >= maze.Center.z - MAZE_SIZE) and
+				(a_BlockZ <= maze.Center.z + MAZE_SIZE) and
+				(a_BlockY >= maze.Center.y - MAZE_HEIGHT) and
+				(a_BlockY <= maze.Center.y + MAZE_HEIGHT)
+			) then
+				-- The clicked block is within the maze's coords. Check each maze door:
+				for idx2, door in ipairs(maze.Doors) do
+					if (
+						(door.x == a_BlockX) and
+						(door.z == a_BlockZ) and
+						(
+							(door.y == a_BlockY) or (door.y == a_BlockY + 1)  -- The door is 2 blocks high, the stored coord is for the upper part
+						)
+					) then
+					
+						-- It is my door, how dare you touch it!?
+						a_Player:SendMessage("Don't touch the maze doors!");
+						
+						-- The client already thinks the door is toggled, let them know it's not (need to send both door blocks):
+						local IsValid1, BlockType1, BlockMeta1 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, door.y - 1, a_BlockZ);
+						if (IsValid1) then
+							local IsValid2, BlockType2, BlockMeta2 = a_Player:GetWorld():GetBlockTypeMeta(a_BlockX, door.y, a_BlockZ);
+							if (IsValid2) then
+								a_Player:GetClientHandle():SendBlockChange(a_BlockX, door.y - 1, a_BlockZ, BlockType1, BlockMeta1);
+								a_Player:GetClientHandle():SendBlockChange(a_BlockX, door.y,     a_BlockZ, BlockType2, BlockMeta2);
+							end
+						end
+						
+						return true;
+					end
+				end  -- for door - maze.Doors[]
+			end  -- if (in maze)
+		end  -- if (in maze world)
+	end  -- for maze - g_Mazes[]
+	return false;
+end
+
+
+
+
+
 -- The main initialization goes here:
 LoadMazes();
 cPluginManager.AddHook(cPluginManager.HOOK_WORLD_TICK, OnWorldTick);
+cPluginManager.AddHook(cPluginManager.HOOK_PLAYER_RIGHT_CLICK, OnPlayerRightClick);
 cPluginManager.BindCommand("/doormaze", "doormaze.create", HandleDoorMazeCommand, " - Creates a door maze around the specified player");
 
 
