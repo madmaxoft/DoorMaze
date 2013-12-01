@@ -15,14 +15,17 @@ local MAZE_HEIGHT = 5;
 --- Number of doors to change at once
 local MAZE_CHANGES = 50;
 
+--- Name of the file where to save and load the mazes from / to
+local MAZE_FILE = "doormazes.xml";
+
 
 
 
 function SaveMazes()
 	-- TODO: Find a proper XML-writing library for this
-	local f, err = io.open("doormazes.xml", "w");
+	local f, err = io.open(MAZE_FILE, "w");
 	if (f == nil) then
-		LOGWARNING("DoorMaze: Cannot save mazes to 'mazes.xml': " .. err);
+		LOGWARNING("DoorMaze: Cannot save mazes to '" .. MAZE_FILE .. "': " .. err);
 		return;
 	end
 	f:write([[<?xml version="1.0" encoding="ISO-8859-1"?>]]);
@@ -45,13 +48,57 @@ end
 
 
 function LoadMazes()
+	if not(cFile:Exists(MAZE_FILE)) then
+		return;
+	end
+	
+	local CurrentMaze = {};
+	local Mazes = {};  -- List of all the loaded mazes, will replace g_Mazes if successfully loaded
 	local Callbacks =
 	{
-		StartElement = function(a_Parser, a_Name, a_Attrib)
-			-- TODO
-		end
+		StartElement = function (a_Parser, a_Name, a_Attrib)
+			if (a_Name == "maze") then
+				CurrentMaze =
+				{
+					Doors = {},
+					NumTicksLeft = 50,
+				};
+				CurrentMaze.World = cRoot:Get():GetWorld(a_Attrib.worldname);
+				if (CurrentMaze.World == nil) then
+					LOGINFO("Dropping maze, because world '" .. tostring(a_Attrib.worldname or "") .. "' cannot be found.");
+					-- The actual drop will happen on "</maze>"
+				end
+			elseif (a_Name == "center") then
+				CurrentMaze.Center = Vector3i(a_Attrib.x, a_Attrib.y, a_Attrib.z);
+			elseif (a_Name == "door") then
+				table.insert(CurrentMaze.Doors, { x = a_Attrib.x, y = a_Attrib.y, z = a_Attrib.z });
+			end
+		end,
+		
+		EndElement = function (a_Parser, a_Name)
+			if (a_Name == "maze") then
+				if (CurrentMaze.World ~= nil) then
+					table.insert(Mazes, CurrentMaze);
+				end
+			end
+		end,
 	};
 	local Parser = lxp.new(Callbacks);
+	local f, err = io.open(MAZE_FILE, "r");
+	if (f == nil) then
+		LOGWARNING("Cannot read mazes from '" .. MAZE_FILE .. "': " .. err);
+		return;
+	end
+	local Success, ErrMsg = Parser:parse(f:read("*all"));
+	f:close();
+	if not(Success) then
+		LOGWARNING("Cannot parse mazes from '" .. MAZE_FILE .. "': " .. ErrMsg);
+		return;
+	end
+	Parser:close();
+	
+	-- Successfully loaded and parsed, set into g_Mazes:
+	g_Mazes = Mazes;
 end
 
 
@@ -152,7 +199,7 @@ function GenerateMaze(a_World, a_MazeCenter)
 	local Maze = {};
 	a_MazeCenter.x = math.floor(a_MazeCenter.x);
 	a_MazeCenter.z = math.floor(a_MazeCenter.z);
-	Maze.Center = a_MazeCenter;
+	Maze.Center = Vector3i(a_MazeCenter);
 	Maze.World = a_World;
 	Maze.NumTicksLeft = 50;
 	
