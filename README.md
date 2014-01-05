@@ -6,3 +6,7 @@ This is a fun little plugin that can be used to create a maze out of doors aroun
 
 
 
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/madmaxoft/doormaze/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
